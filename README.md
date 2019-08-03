@@ -34,6 +34,14 @@ Enable support for flv file.
 
 Enable or disable support for time offset.
 
+### flv_with_metadata
+
+| Syntax | Context |
+|--------|---------|
+|`flv_with_metadata on/off`|http, server, location|
+
+Enable or disable sending metadata(if existed).
+
 ### flv_buffer_size
 
 | Syntax | Context |
@@ -62,6 +70,7 @@ http {
         location ~\.flv {
             flv;
             flv_time_offset         on;
+            flv_with_metadata       off;
             flv_buffer_size         512k;
             flv_max_buffer_size     2M;
         }
