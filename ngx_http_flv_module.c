@@ -1012,6 +1012,8 @@ ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv)
           in_inf, sizeof(in_inf) }
     };
 
+    times_pos = NULL;
+    filepositions_pos = NULL;
     flv->metadata.buf->pos += NGX_FLV_TAG_HEADER_SIZE;
 
     if (ngx_amf_read(flv, in_elts, sizeof(in_elts) / sizeof(in_elts[0]))
