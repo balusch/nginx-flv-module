@@ -1042,10 +1042,11 @@ ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv)
         flv->filepositions = filepositions_pos + 4;
     }
 
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, flv->file.log, 0, "flv keyframes,"
+                   " times_nelts:%D filepositions_nelts:%D",
+                   flv->times_nelts, flv->filepositions_nelts);
+
     if (!flv->times_nelts || flv->times_nelts != flv->filepositions_nelts) {
-        ngx_log_error(NGX_LOG_ERR, flv->file.log, 0, "flv invalid keyframes,"
-                      " times_nelts:%D filepositions_nelts:%D",
-                      flv->times_nelts, flv->filepositions_nelts);
         return NGX_DECLINED;
     }
 
