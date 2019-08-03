@@ -685,12 +685,6 @@ ngx_http_flv_process(ngx_http_flv_file_t *flv)
         return rc;
     }
 
-    if (!flv->avc_video) {
-        ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
-                      "flv does not support time shift as codec is not avc");
-        return NGX_DECLINED;
-    }
-
     rc = ngx_http_flv_parse_metadata(flv);
     if (rc != NGX_OK) {
         return rc;
@@ -918,7 +912,10 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
             }
             flv->met_audio = 1;
             flv->aac_audio = ngx_flv_codec_is_aac(tag->av_header);
-            if (flv->aac_audio && !ngx_flv_is_sequence_header(tag->av_type)) {
+            if (!flv->aac_audio) {
+                break;
+            }
+            if (!ngx_flv_is_sequence_header(tag->av_type)) {
                 ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
                               "flv first audio tag is not sequence header");
                 return NGX_ERROR;
@@ -940,7 +937,12 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
             }
             flv->met_video = 1;
             flv->avc_video = ngx_flv_codec_is_avc(tag->av_header);
-            if (flv->avc_video && !ngx_flv_is_sequence_header(tag->av_type)) {
+            if (!flv->avc_video) {
+                ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
+                              "flv does not support time offset, avc required");
+                return NGX_DECLINED;
+            }
+            if (!ngx_flv_is_sequence_header(tag->av_type)) {
                 ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
                               "flv first video tag is not sequence header");
                 return NGX_ERROR;
