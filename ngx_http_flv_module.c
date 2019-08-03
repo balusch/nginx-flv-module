@@ -170,6 +170,7 @@ typedef struct {
     size_t                buffer_size;
     size_t                max_buffer_size;
     ngx_flag_t            time_offset;
+    ngx_flag_t            with_metadata;
 } ngx_http_flv_conf_t;
 
 
@@ -198,6 +199,7 @@ typedef struct {
     unsigned              met_video:1;
     unsigned              aac_audio:1;
     unsigned              avc_video:1;
+    unsigned              with_metadata:1;
 
     ngx_chain_t          *necessary;
     ngx_chain_t           metadata;
@@ -261,6 +263,13 @@ static ngx_command_t  ngx_http_flv_commands[] = {
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_flv_conf_t, time_offset),
+      NULL },
+
+    { ngx_string("flv_with_metadata"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_flv_conf_t, with_metadata),
       NULL },
 
     { ngx_string("flv_buffer_size"),
@@ -493,6 +502,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
         flv->file.log = r->connection->log;
         flv->file_end = of.size;
         flv->buffer_size = conf->buffer_size;
+        flv->with_metadata = conf->with_metadata;
         flv->start = time_start;
         flv->end = time_end;
         flv->request = r;
@@ -701,12 +711,11 @@ ngx_http_flv_process(ngx_http_flv_file_t *flv)
 
     prev = &flv->necessary;
 
-    /*
-    if (flv->metadata.buf) {
+    if (flv->with_metadata && flv->metadata.buf) {
         *prev = &flv->metadata;
         prev = &flv->metadata.next;
+        flv->necessary_len += ngx_buf_size(flv->metadata.buf);
     }
-    */
 
     if (flv->audio_sequence_header.buf) {
         *prev = &flv->audio_sequence_header;
@@ -871,9 +880,10 @@ ngx_http_flv_read_metadata(ngx_http_flv_file_t *flv)
     buf->temporary = 1;
     buf->pos = flv->buffer_pos;
     buf->last = flv->buffer_pos + size;
+    buf->start = buf->pos;
+    buf->end = buf->last;
 
     flv->metadata.buf = buf;
-    /* flv->necessary_len += ngx_buf_size(flv->metadata.buf); */
 
     ngx_http_flv_tag_next(flv, size);
 
@@ -898,7 +908,7 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
 
         tag = (ngx_flv_tag_header_t *) flv->buffer_pos;
         size = NGX_FLV_TAG_HEADER_SIZE + ngx_flv_get_tag_size(tag->size)
-               + NGX_FLV_PREV_TAG_SIZE;
+            + NGX_FLV_PREV_TAG_SIZE;
 
         if (flv->buffer_pos + size > flv->buffer_end) {
             break;
@@ -1038,6 +1048,8 @@ ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv)
                       flv->times_nelts, flv->filepositions_nelts);
         return NGX_DECLINED;
     }
+
+    flv->metadata.buf->pos = flv->metadata.buf->start;
 
     return NGX_OK;
 }
@@ -1360,6 +1372,7 @@ ngx_http_flv_create_conf(ngx_conf_t *cf)
     conf->buffer_size = NGX_CONF_UNSET_SIZE;
     conf->max_buffer_size = NGX_CONF_UNSET_SIZE;
     conf->time_offset = NGX_CONF_UNSET;
+    conf->with_metadata = NGX_CONF_UNSET;
 
     return conf;
 }
@@ -1375,6 +1388,7 @@ ngx_http_flv_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_size_value(conf->max_buffer_size, prev->max_buffer_size,
                               2 * 1024 * 1024);
     ngx_conf_merge_value(conf->time_offset, prev->time_offset, 0);
+    ngx_conf_merge_value(conf->with_metadata, prev->with_metadata, 0);
 
     return NGX_CONF_OK;
 }
