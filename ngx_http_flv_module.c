@@ -186,8 +186,7 @@ typedef struct {
     off_t                 offset;
     off_t                 file_end;
     off_t                 sequence_end;
-    off_t                 sequence_len;
-    off_t                 metadata_len;
+    off_t                 necessary_len;
     off_t                 start_offset;
     off_t                 end_offset;
     ngx_uint_t            start;
@@ -200,7 +199,7 @@ typedef struct {
     unsigned              aac_audio:1;
     unsigned              avc_video:1;
 
-    ngx_chain_t          *out;
+    ngx_chain_t          *necessary;
     ngx_chain_t           metadata;
     ngx_chain_t           audio_sequence_header;
     ngx_chain_t           video_sequence_header;
@@ -515,8 +514,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
             end = flv->end_offset;
             len = end - start;
             if (start > 0) {
-                /* len += flv->metadata_len; */
-                len += sizeof(ngx_flv_header) - 1 + flv->sequence_len;
+                len += sizeof(ngx_flv_header) - 1 + flv->necessary_len;
                 i = 0;
             }
 
@@ -560,12 +558,12 @@ ngx_http_flv_handler(ngx_http_request_t *r)
         out[0].buf = b;
         out[0].next = &out[1];
 
-        if (flv && flv->out) {
-            out[0].next = flv->out;
-            while (flv->out->next) {
-                flv->out = flv->out->next;
+        if (flv && flv->necessary) {
+            out[0].next = flv->necessary;
+            while (flv->necessary->next) {
+                flv->necessary= flv->necessary->next;
             }
-            flv->out->next = &out[1];
+            flv->necessary->next = &out[1];
         }
     }
 
@@ -701,7 +699,7 @@ ngx_http_flv_process(ngx_http_flv_file_t *flv)
         return NGX_DECLINED;
     }
 
-    prev = &flv->out;
+    prev = &flv->necessary;
 
     /*
     if (flv->metadata.buf) {
@@ -713,10 +711,12 @@ ngx_http_flv_process(ngx_http_flv_file_t *flv)
     if (flv->audio_sequence_header.buf) {
         *prev = &flv->audio_sequence_header;
         prev = &flv->audio_sequence_header.next;
+        flv->necessary_len += ngx_buf_size(flv->audio_sequence_header.buf);
     }
 
     if (flv->video_sequence_header.buf) {
         *prev = &flv->video_sequence_header;
+        flv->necessary_len += ngx_buf_size(flv->video_sequence_header.buf);
     }
 
     return NGX_OK;
@@ -873,7 +873,7 @@ ngx_http_flv_read_metadata(ngx_http_flv_file_t *flv)
     buf->last = flv->buffer_pos + size;
 
     flv->metadata.buf = buf;
-    flv->metadata_len = size;
+    /* flv->necessary_len += ngx_buf_size(flv->metadata.buf); */
 
     ngx_http_flv_tag_next(flv, size);
 
@@ -920,7 +920,6 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
                               "flv first audio tag is not sequence header");
                 return NGX_ERROR;
             }
-            flv->sequence_len += size;
             flv->sequence_end = flv->offset + size;
 
             buf = &flv->audio_sequence_buf;
@@ -947,7 +946,6 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
                               "flv first video tag is not sequence header");
                 return NGX_ERROR;
             }
-            flv->sequence_len += size;
             flv->sequence_end = flv->offset + size;
 
             buf = &flv->video_sequence_buf;
@@ -963,8 +961,6 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
         }
 
         if (flv->met_audio && flv->met_video) {
-            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, flv->file.log, 0,
-                           "flv sequence_len:%O", flv->sequence_len);
             return NGX_OK;
         }
 
