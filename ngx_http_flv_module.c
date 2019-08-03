@@ -1099,13 +1099,12 @@ ngx_http_flv_timestamp_to_offset(ngx_http_flv_file_t *flv, ngx_uint_t timestamp,
     first = (ngx_uint_t) (1000 * ngx_flv_get_amf_number(&times[left*9 + 1]));
     last = (ngx_uint_t) (1000 * ngx_flv_get_amf_number(&times[right*9 + 1]));
 
-    if (start) {
-        if (timestamp <= first) {
-            return 0;
-        }
+    if (timestamp <= first || timestamp >= last) {
 
-    } else {
-        if (timestamp >= last) {
+        if (start) {
+            return 0;
+
+        } else {
             return flv->file_end;
         }
     }
