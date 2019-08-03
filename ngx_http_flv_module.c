@@ -269,6 +269,20 @@ static ngx_command_t  ngx_http_flv_commands[] = {
       offsetof(ngx_http_flv_conf_t, time_shift),
       NULL },
 
+    { ngx_string("flv_buffer_size"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_size_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_flv_conf_t, buffer_size),
+      NULL },
+
+    { ngx_string("flv_max_buffer_size"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_size_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_flv_conf_t, max_buffer_size),
+      NULL },
+
       ngx_null_command
 };
 
