@@ -26,11 +26,11 @@ Build [nginx](http://nginx.org) with the module:
 
 Enable support for flv file.
 
-### flv_time_shift
+### flv_time_offset
 
 | Syntax | Context |
 |--------|---------|
-|`flv_time_shift on/off`|http, server, location|
+|`flv_time_offset on/off`|http, server, location|
 
 Enable or disable support for time offset.
 
@@ -61,10 +61,18 @@ http {
         root            /media/FLV;
         location ~\.flv {
             flv;
-            flv_time_shift          on;
+            flv_time_offset         on;
             flv_buffer_size         512k;
             flv_max_buffer_size     2M;
         }
     }
 }
 ```
+
+* with `time_offset` argument:
+
+![flv-with-time_offset](https://raw.githubusercontent.com/BalusChen/Markdown_Photos/master/L78Z/flv-with-time_offset.png)
+
+* without `time_offset` argument:
+
+![flv-without-time_offset](https://raw.githubusercontent.com/BalusChen/Markdown_Photos/master/L78Z/flv-without-time_offset.png)
