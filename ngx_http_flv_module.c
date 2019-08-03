@@ -166,19 +166,6 @@ typedef struct {
 } ngx_amf_elt_t;
 
 
-typedef ngx_chain_t * (*ngx_amf_alloc_pt)(void *arg);
-
-
-typedef struct {
-    size_t                offset;
-    ngx_chain_t          *link;
-    ngx_chain_t          *first;
-    ngx_log_t            *log;
-    void                 *arg;
-    ngx_amf_alloc_pt      alloc;
-} ngx_amf_ctx_t;
-
-
 typedef struct {
     size_t                buffer_size;
     size_t                max_buffer_size;
@@ -245,8 +232,16 @@ static ngx_int_t ngx_http_flv_read_tags(ngx_http_flv_file_t *flv);
 static ngx_int_t ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv);
 static off_t ngx_http_flv_timestamp_to_offset(ngx_http_flv_file_t *flv,
     ngx_uint_t timestamp, ngx_uint_t start);
-static ngx_int_t ngx_amf_read(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts,
+
+static void * ngx_amf_reverse_copy(void *dst, void *src, size_t len);
+static ngx_int_t ngx_amf_is_compatible_type(uint8_t t1, uint8_t t2);
+static ngx_int_t ngx_amf_get(ngx_http_flv_file_t *flv, void *p, size_t n);
+static ngx_int_t ngx_amf_read(ngx_http_flv_file_t *flv, ngx_amf_elt_t *elts,
     size_t nelts);
+static ngx_int_t ngx_amf_read_object(ngx_http_flv_file_t *flv,
+    ngx_amf_elt_t *elts, size_t nelts);
+static ngx_int_t ngx_amf_read_array(ngx_http_flv_file_t *flv,
+    ngx_amf_elt_t *elts, size_t nelts);
 
 static char *ngx_http_flv(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_http_flv_create_conf(ngx_conf_t *cf);
@@ -985,22 +980,18 @@ ngx_http_flv_read_tags(ngx_http_flv_file_t *flv)
 static ngx_int_t
 ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv)
 {
-    ngx_buf_t             buf, *b;
-    ngx_chain_t           chain;
-    ngx_amf_ctx_t         act;
-
-    static ngx_amf_ctx_t  filepositions_ctx;
-    static ngx_amf_ctx_t  times_ctx;
+    static u_char        *filepositions_pos;
+    static u_char        *times_pos;
 
     static ngx_amf_elt_t  in_keyframes[] = {
 
         { NGX_AMF_ARRAY | NGX_AMF_CONTEXT,
           ngx_string("filepositions"),
-          &filepositions_ctx, 0 },
+          &filepositions_pos, 0 },
 
         { NGX_AMF_ARRAY | NGX_AMF_CONTEXT,
           ngx_string("times"),
-          &times_ctx, 0 }
+          &times_pos, 0 }
     };
 
     static ngx_amf_elt_t  in_inf[] = {
@@ -1021,23 +1012,9 @@ ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv)
           in_inf, sizeof(in_inf) }
     };
 
-    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, flv->file.log, 0,
-                   "flv parse metadata");
+    flv->metadata.buf->pos += NGX_FLV_TAG_HEADER_SIZE;
 
-    /* parse metadata */
-    ngx_memcpy(&buf, flv->metadata.buf, sizeof(ngx_buf_t));
-    ngx_memzero(&act, sizeof(act));
-    ngx_memzero(&chain, sizeof(ngx_chain_t));
-
-    buf.pos += NGX_FLV_TAG_HEADER_SIZE;
-    chain.buf = &buf;
-    act.link = &chain;
-    act.log = flv->file.log;
-
-    ngx_memzero(&filepositions_ctx, sizeof(filepositions_ctx));
-    ngx_memzero(&times_ctx, sizeof(times_ctx));
-
-    if (ngx_amf_read(&act, in_elts, sizeof(in_elts) / sizeof(in_elts[0]))
+    if (ngx_amf_read(flv, in_elts, sizeof(in_elts) / sizeof(in_elts[0]))
         != NGX_OK)
     {
         ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
@@ -1045,31 +1022,14 @@ ngx_http_flv_parse_metadata(ngx_http_flv_file_t *flv)
         return NGX_DECLINED;
     }
 
-    if (times_ctx.link) {
-        b = times_ctx.link->buf;
-
-        if (b->last - b->pos < (ngx_int_t) times_ctx.offset + 4) {
-            ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
-                          "flv failed to init times");
-            return NGX_DECLINED;
-        }
-
-        flv->times_nelts = ngx_flv_get_32value(b->pos + times_ctx.offset);
-        flv->times = b->pos + times_ctx.offset + 4;
+    if (times_pos != NULL) {
+        flv->times_nelts = ngx_flv_get_32value(times_pos);
+        flv->times = times_pos + 4;
     }
 
-    if (filepositions_ctx.link) {
-        b = filepositions_ctx.link->buf;
-
-        if (b->last - b->pos < (ngx_int_t) filepositions_ctx.offset + 4) {
-            ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
-                          "flv failed to init filepositions");
-            return NGX_DECLINED;
-        }
-
-        flv->filepositions_nelts =
-                ngx_flv_get_32value(b->pos + filepositions_ctx.offset);
-        flv->filepositions = b->pos + filepositions_ctx.offset + 4;
+    if (filepositions_pos != NULL) {
+        flv->filepositions_nelts = ngx_flv_get_32value(filepositions_pos);
+        flv->filepositions = filepositions_pos + 4;
     }
 
     if (!flv->times_nelts || flv->times_nelts != flv->filepositions_nelts) {
@@ -1159,106 +1119,154 @@ ngx_amf_reverse_copy(void *dst, void *src, size_t len)
     return dst;
 }
 
-#define NGX_AMF_DEBUG_SIZE 16
-
-#ifdef NGX_DEBUG
-static void
-ngx_amf_debug(ngx_log_t *log, const char *op, u_char *p, size_t n)
-{
-    size_t          i;
-    u_char          hstr[3 * NGX_AMF_DEBUG_SIZE + 1];
-    u_char          str[NGX_AMF_DEBUG_SIZE + 1];
-    u_char         *hp, *sp;
-    static u_char   hex[] = "0123456789ABCDEF";
-
-    hp = hstr;
-    sp = str;
-
-    for (i = 0; i < n && i < NGX_AMF_DEBUG_SIZE; ++i) {
-        *hp++ = ' ';
-        if (p) {
-            *hp++ = hex[(*p & 0xf0) >> 4];
-            *hp++ = hex[*p & 0x0f];
-            *sp++ = (*p >= 0x20 && *p <= 0x7e) ?
-                    *p : (u_char)'?';
-            ++p;
-        } else {
-            *hp++ = 'X';
-            *hp++ = 'X';
-            *sp++ = '?';
-        }
-    }
-    *hp = *sp = '\0';
-
-    ngx_log_debug4(NGX_LOG_DEBUG_CORE, log, 0,
-                   "AMF %s (%d)%s '%s'", op, n, hstr, str);
-}
-#endif
 
 static ngx_int_t
-ngx_amf_get(ngx_amf_ctx_t *ctx, void *p, size_t n)
+ngx_amf_is_compatible_type(uint8_t t1, uint8_t t2)
 {
-    u_char       *pos, *last;
-    size_t        size, offset;
-    ngx_chain_t  *l;
-#ifdef NGX_DEBUG
-    void         *op = p;
-    size_t        on = n;
-#endif
+    return t1 == t2
+        || (t1 == NGX_AMF_OBJECT && t2 == NGX_AMF_MIXED_ARRAY)
+        || (t2 == NGX_AMF_OBJECT && t1 == NGX_AMF_MIXED_ARRAY);
+}
 
-    if (!n) {
-        return NGX_OK;
+
+static ngx_int_t
+ngx_amf_get(ngx_http_flv_file_t *flv, void *p, size_t n)
+{
+    u_char  *data;
+
+    if (flv->metadata.buf->pos + n > flv->metadata.buf->last) {
+        return NGX_ERROR;
     }
 
-    for (l = ctx->link, offset = ctx->offset; l; l = l->next, offset = 0) {
+    data = flv->metadata.buf->pos;
+    if (p != NULL) {
+        ngx_cpymem(p, data, n);
+    }
+    flv->metadata.buf->pos += n;
 
-        pos  = l->buf->pos + offset;
-        last = l->buf->last;
+    return NGX_OK;
+}
 
-        if (last >= pos + n) {
-            if (p) {
-                p = ngx_cpymem(p, pos, n);
+
+static ngx_int_t
+ngx_amf_read(ngx_http_flv_file_t *flv, ngx_amf_elt_t *elts,
+    size_t nelts)
+{
+    void               *data;
+    u_char              buf[8];
+    size_t              n;
+    uint8_t             type8;
+    uint16_t            len;
+    uint32_t            max_index;
+    ngx_uint_t          type;
+
+    for (n = 0; n < nelts; n++) {
+
+        if (ngx_amf_get(flv, &type8, 1) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        type = type8;
+        data = (elts &&
+                ngx_amf_is_compatible_type((uint8_t) (elts->type & 0xFF),
+                                           (uint8_t) type))
+                ? elts->data
+                : NULL;
+
+        if (elts && (elts->type & NGX_AMF_CONTEXT)) {
+            if (data) {
+                * ((u_char **) data) = flv->metadata.buf->pos;
             }
-            ctx->offset = offset + n;
-            ctx->link = l;
-
-#ifdef NGX_DEBUG
-            ngx_amf_debug(ctx->log, "read", (u_char*)op, on);
-#endif
-
-            return NGX_OK;
+            data = NULL;
         }
 
-        size = last - pos;
+        switch (type) {
 
-        if (p) {
-            p = ngx_cpymem(p, pos, size);
+        case NGX_AMF_NUMBER:
+            if (ngx_amf_get(flv, buf, 8) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
+            ngx_amf_reverse_copy(data, buf, 8);
+
+            break;
+
+        case NGX_AMF_BOOLEAN:
+            if (ngx_amf_get(flv, data, 1) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
+            break;
+
+        case NGX_AMF_STRING:
+            if (ngx_amf_get(flv, buf, 2) != NGX_OK) {
+                return NGX_ERROR;
+            }
+            ngx_amf_reverse_copy(&len, buf, 2);
+
+            if (ngx_amf_get(flv, data, len) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
+            break;
+
+        case NGX_AMF_MIXED_ARRAY:
+            if (ngx_amf_get(flv, &max_index, 4) != NGX_OK) {
+                return NGX_ERROR;
+            }
+            /* fall through */
+
+        case NGX_AMF_OBJECT:
+            if (ngx_amf_read_object(flv, data,
+                    data && elts ? elts->len / sizeof(elts[0]) : 0
+            ) != NGX_OK)
+            {
+                return NGX_ERROR;
+            }
+
+            break;
+
+        case NGX_AMF_ARRAY:
+            if (ngx_amf_read_array(flv, data,
+                    data && elts ? elts->len / sizeof(elts[0]) : 0
+            ) != NGX_OK)
+            {
+                return NGX_ERROR;
+            }
+
+            break;
+
+        default:
+            ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
+                          "flv unknown amf type %d in \"%s\"",
+                          type, flv->file.name.data);
+            return NGX_ERROR;
         }
 
-        n -= size;
+        if (elts) {
+            elts++;
+        }
     }
 
-    ngx_log_debug1(NGX_LOG_DEBUG_CORE, ctx->log, 0,
-                   "AMF read eof (%d)", n);
-
-    return NGX_DONE;
+    return NGX_OK;
 }
 
 
 static ngx_int_t
-ngx_amf_read_object(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts, size_t nelts)
+ngx_amf_read_object(ngx_http_flv_file_t *flv, ngx_amf_elt_t *elts,
+   size_t nelts)
 {
-    u_char     buf[2];
-    size_t     n, namelen, maxlen;
-    uint8_t    type;
-    uint16_t   len;
-    ngx_int_t  rc;
+    u_char      buf[2];
+    size_t      n, namelen, maxlen;
+    uint8_t     type;
+    uint16_t    len;
 
     maxlen = 0;
     for (n = 0; n < nelts; ++n) {
         namelen = elts[n].name.len;
-        if (namelen > maxlen)
+        if (namelen > maxlen) {
             maxlen = namelen;
+        }
     }
 
     for ( ;; ) {
@@ -1271,52 +1279,31 @@ ngx_amf_read_object(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts, size_t nelts)
             return NGX_ERROR;
         }
 #endif
-        /* read key */
-        switch (ngx_amf_get(ctx, buf, 2)) {
-        case NGX_DONE:
-            /* Envivio sends unfinalized arrays */
-            return NGX_OK;
-        case NGX_OK:
-            break;
-        default:
+
+        if (ngx_amf_get(flv, buf, 2) != NGX_OK) {
             return NGX_ERROR;
         }
-
         ngx_amf_reverse_copy(&len, buf, 2);
 
-        if (!len) {
+        if (len == 0) {
             break;
         }
 
-        if (len <= maxlen) {
-            rc = ngx_amf_get(ctx, name, len);
-
-        } else {
-            rc = ngx_amf_get(ctx, name, maxlen);
-            if (rc != NGX_OK) {
-                return NGX_ERROR;
-            }
-
-            rc = ngx_amf_get(ctx, 0, len - maxlen);
-        }
-
-        if (rc != NGX_OK) {
+        if (ngx_amf_get(flv, name, len) != NGX_OK) {
             return NGX_ERROR;
         }
 
-        /* TODO: if we require array to be sorted on name
-         * then we could be able to use binary search */
         for (n = 0; n < nelts
                     && (len != elts[n].name.len
-                        || ngx_strncmp(name, elts[n].name.data, len));
+                        || ngx_strncmp(name, elts[n].name.data, len) != 0);
              ++n);
 
-        if (ngx_amf_read(ctx, n < nelts ? &elts[n] : NULL, 1) != NGX_OK) {
+        if (ngx_amf_read(flv, n < nelts ? &elts[n] : NULL, 1) != NGX_OK) {
             return NGX_ERROR;
         }
     }
 
-    if (ngx_amf_get(ctx, &type, 1) != NGX_OK || type != NGX_AMF_END) {
+    if (ngx_amf_get(flv, &type, 1) != NGX_OK || type != NGX_AMF_END) {
         return NGX_ERROR;
     }
 
@@ -1325,213 +1312,22 @@ ngx_amf_read_object(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts, size_t nelts)
 
 
 static ngx_int_t
-ngx_amf_read_array(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts, size_t nelts)
+ngx_amf_read_array(ngx_http_flv_file_t *flv, ngx_amf_elt_t *elts,
+    size_t nelts)
 {
-    u_char    buf[4];
-    size_t    n;
-    uint32_t  len;
+    u_char      buf[4];
+    size_t      n;
+    uint32_t    len;
 
-    /* read length */
-    if (ngx_amf_get(ctx, buf, 4) != NGX_OK) {
+    if (ngx_amf_get(flv, buf, 4) != NGX_OK) {
         return NGX_ERROR;
     }
 
     ngx_amf_reverse_copy(&len, buf, 4);
 
     for (n = 0; n < len; ++n) {
-        if (ngx_amf_read(ctx, n < nelts ? &elts[n] : NULL, 1) != NGX_OK) {
+        if (ngx_amf_read(flv, n < nelts ? &elts[n] : NULL, 1) != NGX_OK) {
             return NGX_ERROR;
-        }
-    }
-
-    return NGX_OK;
-}
-
-
-static ngx_int_t
-ngx_amf_read_variant(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts, size_t nelts)
-{
-    size_t         n;
-    uint8_t        type;
-    ngx_int_t      rc;
-    ngx_amf_elt_t  elt;
-
-    rc = ngx_amf_get(ctx, &type, 1);
-    if (rc != NGX_OK) {
-        return rc;
-    }
-
-    ngx_memzero(&elt, sizeof(elt));
-    for (n = 0; n < nelts; ++n, ++elts) {
-        if (type == elts->type) {
-            elt.data = elts->data;
-            elt.len  = elts->len;
-        }
-    }
-
-    elt.type = type | NGX_AMF_TYPELESS;
-
-    return ngx_amf_read(ctx, &elt, 1);
-}
-
-
-static ngx_int_t
-ngx_amf_is_compatible_type(uint8_t t1, uint8_t t2)
-{
-    return t1 == t2
-           || (t1 == NGX_AMF_OBJECT && t2 == NGX_AMF_MIXED_ARRAY)
-           || (t2 == NGX_AMF_OBJECT && t1 == NGX_AMF_MIXED_ARRAY);
-}
-
-
-static ngx_int_t
-ngx_amf_read(ngx_amf_ctx_t *ctx, ngx_amf_elt_t *elts, size_t nelts)
-{
-    void       *data;
-    u_char      buf[8];
-    size_t      n;
-    uint8_t     type8;
-    uint16_t    len;
-    uint32_t    max_index;
-    ngx_int_t   type, rc;
-
-    for (n = 0; n < nelts; ++n) {
-
-        if (elts && elts->type & NGX_AMF_TYPELESS) {
-            type = elts->type & ~NGX_AMF_TYPELESS;
-            data = elts->data;
-
-        } else {
-            switch (ngx_amf_get(ctx, &type8, 1)) {
-            case NGX_DONE:
-                if (elts && elts->type & NGX_AMF_OPTIONAL) {
-                    return NGX_OK;
-                }
-            case NGX_ERROR:
-                return NGX_ERROR;
-            }
-            type = type8;
-            data = (elts &&
-                    ngx_amf_is_compatible_type((uint8_t) (elts->type & 0xff),
-                                               (uint8_t) type))
-                   ? elts->data
-                   : NULL;
-
-            if (elts && (elts->type & NGX_AMF_CONTEXT)) {
-                if (data) {
-                    *(ngx_amf_ctx_t *) data = *ctx;
-                }
-                data = NULL;
-            }
-        }
-
-        switch (type) {
-        case NGX_AMF_NUMBER:
-            if (ngx_amf_get(ctx, buf, 8) != NGX_OK) {
-                return NGX_ERROR;
-            }
-            ngx_amf_reverse_copy(data, buf, 8);
-            break;
-
-        case NGX_AMF_BOOLEAN:
-            if (ngx_amf_get(ctx, data, 1) != NGX_OK) {
-                return NGX_ERROR;
-            }
-            break;
-
-        case NGX_AMF_STRING:
-            if (ngx_amf_get(ctx, buf, 2) != NGX_OK) {
-                return NGX_ERROR;
-            }
-            ngx_amf_reverse_copy(&len, buf, 2);
-
-            if (data == NULL) {
-                rc = ngx_amf_get(ctx, data, len);
-
-            } else if (elts->len <= len) {
-                rc = ngx_amf_get(ctx, data, elts->len - 1);
-                if (rc != NGX_OK) {
-                    return NGX_ERROR;
-                }
-                ((char*)data)[elts->len - 1] = 0;
-                rc = ngx_amf_get(ctx, NULL, len - elts->len + 1);
-
-            } else {
-                rc = ngx_amf_get(ctx, data, len);
-                ((char*)data)[len] = 0;
-            }
-
-            if (rc != NGX_OK) {
-                return NGX_ERROR;
-            }
-
-            break;
-
-        case NGX_AMF_NULL:
-        case NGX_AMF_ARRAY_NULL:
-            break;
-
-        case NGX_AMF_MIXED_ARRAY:
-            if (ngx_amf_get(ctx, &max_index, 4) != NGX_OK) {
-                return NGX_ERROR;
-            }
-
-        case NGX_AMF_OBJECT:
-            if (ngx_amf_read_object(ctx, data,
-                    data && elts ? elts->len / sizeof(ngx_amf_elt_t) : 0
-            ) != NGX_OK)
-            {
-                return NGX_ERROR;
-            }
-            break;
-
-        case NGX_AMF_ARRAY:
-            if (ngx_amf_read_array(ctx, data,
-                    data && elts ? elts->len / sizeof(ngx_amf_elt_t) : 0
-            ) != NGX_OK)
-            {
-                return NGX_ERROR;
-            }
-            break;
-
-        case NGX_AMF_VARIANT_:
-            if (ngx_amf_read_variant(ctx, data,
-                    data && elts ? elts->len / sizeof(ngx_amf_elt_t) : 0
-            ) != NGX_OK)
-            {
-                return NGX_ERROR;
-            }
-            break;
-
-        case NGX_AMF_INT8:
-            if (ngx_amf_get(ctx, data, 1) != NGX_OK) {
-                return NGX_ERROR;
-            }
-            break;
-
-        case NGX_AMF_INT16:
-            if (ngx_amf_get(ctx, buf, 2) != NGX_OK) {
-                return NGX_ERROR;
-            }
-            ngx_amf_reverse_copy(data, buf, 2);
-            break;
-
-        case NGX_AMF_INT32:
-            if (ngx_amf_get(ctx, buf, 4) != NGX_OK) {
-                return NGX_ERROR;
-            }
-            ngx_amf_reverse_copy(data, buf, 4);
-            break;
-
-        case NGX_AMF_END:
-            return NGX_OK;
-
-        default:
-            return NGX_ERROR;
-        }
-
-        if (elts) {
-            ++elts;
         }
     }
 
