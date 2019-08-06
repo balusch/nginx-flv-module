@@ -1135,15 +1135,8 @@ ngx_http_flv_timestamp_to_offset(ngx_http_flv_file_t *flv, ngx_uint_t timestamp,
     filepositions = flv->filepositions;
     offset = (off_t) ngx_flv_get_amf_number(&filepositions[middle*9 + 1]);
 
-    if (start) {
-        if (offset <= flv->sequence_end) {
-            return 0;
-        }
-
-    } else {
-        if (middle >= flv->filepositions_nelts - 1) {
-            return flv->file_end;
-        }
+    if (start && offset <= flv->sequence_end) {
+        return 0;
     }
 
     return offset;
