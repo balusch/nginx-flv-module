@@ -182,7 +182,7 @@ typedef struct {
 typedef struct {
     size_t                buffer_size;
     size_t                max_buffer_size;
-    ngx_flag_t            time_shift;
+    ngx_flag_t            time_offset;
 } ngx_http_flv_conf_t;
 
 
@@ -262,11 +262,11 @@ static ngx_command_t  ngx_http_flv_commands[] = {
       0,
       NULL },
 
-    { ngx_string("flv_time_shift"),
+    { ngx_string("flv_time_offset"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_flv_conf_t, time_shift),
+      offsetof(ngx_http_flv_conf_t, time_offset),
       NULL },
 
     { ngx_string("flv_buffer_size"),
@@ -331,7 +331,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
     ngx_log_t                 *log;
     ngx_buf_t                 *b;
     ngx_int_t                  rc, time_start, time_end;
-    ngx_uint_t                 level, i, time_shift;
+    ngx_uint_t                 level, i, time_offset;
     ngx_chain_t                out[2];
     ngx_http_flv_file_t       *flv;
     ngx_http_flv_conf_t       *conf;
@@ -433,7 +433,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
     r->root_tested = !r->error_page;
 
     conf = ngx_http_get_module_loc_conf(r, ngx_http_flv_module);
-    time_shift = (ngx_uint_t) conf->time_shift;
+    time_offset = (ngx_uint_t) conf->time_offset;
     time_start = 0;
     time_end = -1;
     start = 0;
@@ -444,13 +444,13 @@ ngx_http_flv_handler(ngx_http_request_t *r)
 
     if (r->args.len) {
 
-        if (ngx_http_arg(r, (u_char *) "time_shift", 10, &value) == NGX_OK) {
-            time_shift = 1;
+        if (ngx_http_arg(r, (u_char *) "time_offset", 11, &value) == NGX_OK) {
+            time_offset = 1;
         }
 
         if (ngx_http_arg(r, (u_char *) "start", 5, &value) == NGX_OK) {
 
-            if (time_shift) {
+            if (time_offset) {
                 time_start = ngx_http_flv_atofp(value.data, value.len, 3);
 
             } else {
@@ -467,7 +467,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
             }
         }
 
-        if (time_shift
+        if (time_offset
             && ngx_http_arg(r, (u_char *) "end", 3, &value) == NGX_OK)
         {
             time_end = ngx_http_flv_atofp(value.data, value.len, 3);
@@ -480,7 +480,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
 
     if (time_end > time_start) {
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, log, 0,
-                       "http flv time_shift time_start=%i time_end=%i",
+                       "http flv time_offset time_start=%i time_end=%i",
                        time_start, time_end);
 
         flv = ngx_pcalloc(r->pool, sizeof(ngx_http_flv_file_t));
@@ -1564,7 +1564,7 @@ ngx_http_flv_create_conf(ngx_conf_t *cf)
 
     conf->buffer_size = NGX_CONF_UNSET_SIZE;
     conf->max_buffer_size = NGX_CONF_UNSET_SIZE;
-    conf->time_shift = NGX_CONF_UNSET;
+    conf->time_offset = NGX_CONF_UNSET;
 
     return conf;
 }
@@ -1579,7 +1579,7 @@ ngx_http_flv_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_size_value(conf->buffer_size, prev->buffer_size, 512 * 1024);
     ngx_conf_merge_size_value(conf->max_buffer_size, prev->max_buffer_size,
                               2 * 1024 * 1024);
-    ngx_conf_merge_value(conf->time_shift, prev->time_shift, 0);
+    ngx_conf_merge_value(conf->time_offset, prev->time_offset, 0);
 
     return NGX_CONF_OK;
 }
