@@ -434,8 +434,8 @@ ngx_http_flv_handler(ngx_http_request_t *r)
 
     conf = ngx_http_get_module_loc_conf(r, ngx_http_flv_module);
     time_offset = (ngx_uint_t) conf->time_offset;
-    time_start = 0;
-    time_end = -1;
+    time_start = -1;
+    time_end = 0;
     start = 0;
     end = of.size;
     len = of.size;
@@ -478,10 +478,17 @@ ngx_http_flv_handler(ngx_http_request_t *r)
         }
     }
 
-    if (time_end > time_start) {
+    if (time_start >= 0) {
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, log, 0,
                        "http flv time_offset time_start=%i time_end=%i",
                        time_start, time_end);
+
+        if (time_end < time_start) {
+
+            /* denotes the file end */
+
+            time_end = NGX_MAX_INT_T_VALUE;
+        }
 
         flv = ngx_pcalloc(r->pool, sizeof(ngx_http_flv_file_t));
         if (flv == NULL) {
