@@ -34,6 +34,8 @@ Enable support for flv file.
 
 Enable or disable support for time offset.
 
+If this feature is enabled by the server(in nginx.conf file), it means that the server only supports time offset, but clients can also enable this feature by using `time_offset` argument in uri.
+
 ### flv_with_metadata
 
 | Syntax | Context |
