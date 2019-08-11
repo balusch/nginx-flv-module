@@ -17,14 +17,12 @@
 #define NGX_FLV_TAG_TYPE_AUDIO          0x08
 #define NGX_FLV_TAG_TYPE_VIDEO          0x09
 #define NGX_FLV_TAG_TYPE_META           0x12
-
 #define NGX_FLV_TAG_TYPE_MASK           0x1f
 
 #define NGX_FLV_PACKET_AVC              0x07
 #define NGX_FLV_PACKET_AAC              0x0a
 
 #define NGX_FLV_AUDIO_CODECID_MASK      0xf0
-
 #define NGX_FLV_VIDEO_CODECID_MASK      0x0f
 #define NGX_FLV_VIDEO_FRAMETYPE_MASK    0xf0
 
