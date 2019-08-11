@@ -69,7 +69,7 @@ http {
         root            /media/FLV;
         location ~\.flv {
             flv;
-            flv_time_offset         on;
+            flv_time_offset         off;
             flv_with_metadata       off;
             flv_buffer_size         512k;
             flv_max_buffer_size     2M;
