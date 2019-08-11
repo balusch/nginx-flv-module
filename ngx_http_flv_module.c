@@ -468,6 +468,11 @@ ngx_http_flv_handler(ngx_http_request_t *r)
             }
         }
 
+        /*
+         * To keep consistent with the original module,
+         * we just skip the 'end' argument while handling byte offset.
+         */
+
         if (time_offset
             && ngx_http_arg(r, (u_char *) "end", 3, &value) == NGX_OK)
         {
