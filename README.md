@@ -6,6 +6,9 @@ This nginx module is based on the [nginx_flv_module](https://github.com/nginx/ng
 
 The original module just supports the `start` byte offset argument, but this module also supports time offset(use `start`, `end` arguments in uri).
 
+* When using time offset, clients can use `start` and `end` argument in uri to specify the file range.
+* When using byte offset, this module is consistent with the original one, namely only `start` argument is allowed.
+
 ## Build
 
 Build [nginx](http://nginx.org) with the module:
