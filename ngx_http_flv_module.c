@@ -52,6 +52,8 @@ typedef struct {
 } ngx_flv_tag_header_t;
 
 
+/* equals to NGX_FLV_TAG_HEADER_SIZE + NGX_FLV_PREV_TAG_SIZE */
+
 #define NGX_FLV_HEADER_SIZE      sizeof(ngx_flv_header_t)
 #define NGX_FLV_PREV_TAG_SIZE    4
 #define NGX_FLV_TAG_HEADER_SIZE  11
