@@ -84,7 +84,7 @@ typedef struct {
     + (           ((u_char *) (p))[6] << 8)                                   \
     + (           ((u_char *) (p))[7]) )
 
-#define ngx_flv_header_has_signature_version(p)                               \
+#define ngx_flv_validate_signature_version(p)                                 \
     (ngx_flv_get_32value(p) == NGX_FLV_HEADER_SIGVER)
 
 #define ngx_flv_header_has_audio(p)                                           \
@@ -790,7 +790,7 @@ ngx_http_flv_read_header(ngx_http_flv_file_t *flv)
         return NGX_ERROR;
     }
 
-    if (!ngx_flv_header_has_signature_version(flv->buffer_pos)) {
+    if (!ngx_flv_validate_signature_version(flv->buffer_pos)) {
         ngx_log_error(NGX_LOG_ERR, flv->file.log, 0,
                       "flv wrong signature or version");
         return NGX_ERROR;
